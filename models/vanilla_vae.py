@@ -1,3 +1,5 @@
+import math
+import copy
 import torch
 from models import BaseVAE
 from torch import nn
@@ -12,11 +14,19 @@ class VanillaVAE(BaseVAE):
     ) -> None:
         super(VanillaVAE, self).__init__()
 
-        self.latent_dim = latent_dim
-
         modules = []
         if hidden_dims is None:
             hidden_dims = [32, 64, 128, 256, 512]
+
+        ##NOTE: new code by Paul
+        self.hidden_dims = copy.deepcopy(hidden_dims)
+        self.input_img_size = kwargs.get("img_size")
+
+        self.latent_dim = latent_dim
+
+        self.encoded_img_size = int(
+            (self.input_img_size / math.pow(2, len(hidden_dims)))
+        )
 
         # Build Encoder
         for h_dim in hidden_dims:
@@ -36,13 +46,26 @@ class VanillaVAE(BaseVAE):
             in_channels = h_dim
 
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dims[-1] * 4, latent_dim)
-        self.fc_var = nn.Linear(hidden_dims[-1] * 4, latent_dim)
+        # self.fc_mu = nn.Linear(hidden_dims[-1] * 4, latent_dim)
+        # self.fc_var = nn.Linear(hidden_dims[-1] * 4, latent_dim)
+
+        ## NOTE: code by Paul
+        self.fc_mu = nn.Linear(
+            self.encoded_img_size**2 * hidden_dims[-1],
+            latent_dim,
+        )
+        self.fc_var = nn.Linear(
+            self.encoded_img_size**2 * hidden_dims[-1],
+            latent_dim,
+        )
 
         # Build Decoder
         modules = []
 
-        self.decoder_input = nn.Linear(latent_dim, hidden_dims[-1] * 4)
+        # self.decoder_input = nn.Linear(latent_dim, hidden_dims[-1] * 4)
+        self.decoder_input = nn.Linear(
+            latent_dim, self.encoded_img_size**2 * hidden_dims[-1]
+        )
 
         hidden_dims.reverse()
 
@@ -75,7 +98,7 @@ class VanillaVAE(BaseVAE):
             ),
             nn.BatchNorm2d(hidden_dims[-1]),
             nn.LeakyReLU(),
-            nn.Conv2d(hidden_dims[-1], out_channels=3, kernel_size=3, padding=1),
+            nn.Conv2d(hidden_dims[-1], out_channels=1, kernel_size=3, padding=1),
             nn.Tanh(),
         )
 
@@ -104,7 +127,13 @@ class VanillaVAE(BaseVAE):
         :return: (Tensor) [B x C x H x W]
         """
         result = self.decoder_input(z)
-        result = result.view(-1, 512, 2, 2)
+        ## NOTE: code modified by Paul
+        result = result.view(
+            -1,
+            self.hidden_dims[-1],
+            self.encoded_img_size,
+            self.encoded_img_size,
+        )
         result = self.decoder(result)
         result = self.final_layer(result)
         return result
@@ -150,7 +179,7 @@ class VanillaVAE(BaseVAE):
         return {
             "loss": loss,
             "Reconstruction_Loss": recons_loss.detach(),
-            "KLD": -kld_loss.detach(),
+            "KLD": kld_loss.detach(),  ## NOTE: issue in the PyTorch-VAE repo https://github.com/AntixK/PyTorch-VAE/issues/68
         }
 
     def sample(self, num_samples: int, current_device: int, **kwargs) -> Tensor:
