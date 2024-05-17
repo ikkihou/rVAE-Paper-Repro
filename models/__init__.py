@@ -1,5 +1,6 @@
 from .base import *
 from .vanilla_vae import *
+from .rvae import *
 from .fcvae import *
 from .gamma_vae import *
 from .beta_vae import *
@@ -35,6 +36,7 @@ vae_models = {
     "HVAE": HVAE,
     "LVAE": LVAE,
     "IWAE": IWAE,
+    "RVAE": rVAE,
     "SWAE": SWAE,
     "FCVAE": fcVAE,
     "MIWAE": MIWAE,
