@@ -175,6 +175,7 @@ def test_rVAE():
     )
 
     RESULT_DIR = r"./"
+
     tb_logger = TensorBoardLogger(
         save_dir=os.path.join(RESULT_DIR, "tb_logs"), name="rVAE"
     )

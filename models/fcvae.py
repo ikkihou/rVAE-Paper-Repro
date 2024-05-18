@@ -77,7 +77,7 @@ class fcVAE(BaseVAE):
             nn.Sigmoid(),
         )
 
-    def encode(self, input: torch.tensor) -> torch.List[torch.tensor]:
+    def encode(self, input: torch.tensor) -> List[torch.tensor]:
         result = self.encoder(input)
 
         mu = self.fc_mu(result)

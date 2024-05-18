@@ -220,7 +220,7 @@ class rVAE(BaseVAE):
         latent_dim: int = 2,
         nb_classes: int = 0,
         translation: bool = True,
-        hidden_dims: list[int] = None,
+        hidden_dims: List[int] = None,
         **kwargs: Union[int, bool, str],
     ) -> None:
         """Initializes rVAE's modules and parameters
