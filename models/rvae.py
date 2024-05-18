@@ -12,14 +12,17 @@
 
 import logging
 
-from models.types_ import Any, List
 from copy import deepcopy
+
 import math
 import numpy as np
+from scipy.stats import norm
 import torch
-from models import BaseVAE
 from torch import nn
 from torch.nn import functional as F
+
+from models import BaseVAE
+from models.types_ import Any, List
 from utils.coords import imcoordgrid, transform_coordinates
 from .types_ import *
 
@@ -355,7 +358,8 @@ class rVAE(BaseVAE):
         return {
             "loss": loss,
             "Reconstruction_Loss": reconstr_loss.detach(),
-            "KLD": (kld_rot + kld_z).detach(),
+            "KLD_rotation": (kld_rot).detach(),
+            "KLD_z": (kld_z).detach(),
         }
 
     def sample(self, num_samples: int, current_device: int, **kwargs) -> Tensor:
@@ -366,10 +370,23 @@ class rVAE(BaseVAE):
         :param current_device: (Int) Device to run the model
         :return: (Tensor)
         """
-        z = torch.randn(num_samples, self.content_latent_dim)
-        logging.debug(f"sample z shape: {z.shape}")
 
-        z = z.to(current_device)
+        n_rows, n_cols = int(math.sqrt(num_samples)), int(math.sqrt(num_samples))
+
+        grid_x = norm.ppf(np.linspace(0.95, 0.05, n_rows))
+        grid_y = norm.ppf(np.linspace(0.05, 0.95, n_cols))
+
+        z_sample = np.empty((num_samples, 2))
+        index = 0
+        for xi in grid_x:
+            for yi in grid_y:
+                z_sample[index] = np.array([xi, yi])
+                index += 1
+
+        # z = torch.randn(num_samples, self.content_latent_dim)
+        # logging.debug(f"sample z shape: {z.shape}")
+
+        z = torch.from_numpy(z_sample.astype(np.float32)).to(current_device)
 
         x_coord_ = self.x_coord.expand(num_samples, *self.x_coord.size()).to(DEVICE)
 

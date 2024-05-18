@@ -6,10 +6,11 @@ from models.types_ import *
 
 # from utils import data_loader
 import pytorch_lightning as pl
-from torchvision import transforms
 import torchvision.utils as vutils
 
 import platform
+
+
 def get_device():
     if platform.system() == "Darwin":
         # macOS 操作系统
@@ -53,7 +54,7 @@ class VAEXperiment(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         # print(batch[0].shape)
         real_img = batch[0]
-        self.curr_device = DEVICE
+        self.curr_device = self.curr_device
 
         results = self.forward(real_img)
         train_loss = self.model.loss_function(
@@ -71,7 +72,7 @@ class VAEXperiment(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
         real_img = batch[0]
-        self.curr_device = DEVICE
+        self.curr_device = self.curr_device
 
         results = self.forward(real_img)
         val_loss = self.model.loss_function(
