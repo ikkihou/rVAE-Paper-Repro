@@ -43,14 +43,24 @@ class fcVAE(BaseVAE):
 
         ## encoder
         modules = []
-        modules.append(nn.Linear(in_dim, out_features=hidden_dims[0]))
-        for i in range(len(hidden_dims) - 1):
+        in_dim_ = in_dim
+        for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Linear(hidden_dims[i], hidden_dims[i + 1]),
+                    nn.Linear(in_features=in_dim_, out_features=h_dim),
                     nn.LeakyReLU(0.2),
                 )
             )
+            in_dim_ = h_dim
+
+        # modules.append(nn.Linear(in_dim, out_features=hidden_dims[0]))
+        # for i in range(len(hidden_dims) - 1):
+        #     modules.append(
+        #         nn.Sequential(
+        #             nn.Linear(hidden_dims[i], hidden_dims[i + 1]),
+        #             nn.LeakyReLU(0.2),
+        #         )
+        #     )
 
         self.encoder = nn.Sequential(*modules)
 
@@ -58,7 +68,10 @@ class fcVAE(BaseVAE):
         self.fc_var = nn.Linear(hidden_dims[-1], latent_dim)
 
         ## decoder
-        self.decoder_input = nn.Linear(latent_dim, hidden_dims[-1])
+        self.decoder_input = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dims[-1]),
+            nn.LeakyReLU(0.2),
+        )
 
         hidden_dims.reverse()
         modules = []
@@ -124,13 +137,19 @@ class fcVAE(BaseVAE):
         log_var = args[3]
 
         kld_weight = kwargs["M_N"]  # Account for the minibatch samples from the dataset
-        recons_loss = F.mse_loss(recons, input)
+        # recons_loss = F.mse_loss(recons, input)
+        recons_loss = 0.5 * torch.sum(
+            (recons.reshape(recons.size(0), -1) - input.reshape(recons.size(0), -1))
+            ** 2,
+            1,
+        ).mean()
 
         kld_loss = torch.mean(
             -0.5 * torch.sum(1 + log_var - mu**2 - log_var.exp(), dim=1), dim=0
         )
 
         loss = recons_loss + kld_weight * kld_loss
+
         return {
             "loss": loss,
             "Reconstruction_Loss": recons_loss.detach(),

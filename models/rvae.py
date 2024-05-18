@@ -65,23 +65,25 @@ class rEncoder(nn.Module):
 
     def __init__(
         self,
-        in_dim: int = None,
+        in_feature: int = None,
         hidden_dims: List[int] = None,
         latent_dim: int = None,
         *args,
         **kwargs,
     ) -> None:
         super(rEncoder, self).__init__()
+
         ## encoder
         modules = []
-        modules.append(nn.Linear(in_dim, hidden_dims[0]))
-        for i in range(len(hidden_dims) - 1):
+        in_dim = in_feature
+        for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Linear(hidden_dims[i], hidden_dims[i + 1]),
+                    nn.Linear(in_features=in_dim, out_features=h_dim),
                     nn.LeakyReLU(0.2),
                 )
             )
+            in_dim = h_dim
 
         self.encoder = nn.Sequential(*modules)
 
@@ -125,24 +127,28 @@ class rDecoder(nn.Module):
         self.coord_latent = coord_latent(latent_dim, hidden_dims[0], not skip)
 
         fc_decoder = []
-        fc_decoder.append(nn.Linear(hidden_dims[0], hidden_dims[0]))
-        for i in range(len(hidden_dims) - 1):
+        in_dim = hidden_dims[0]
+        for h_dim in hidden_dims:
             fc_decoder.append(
                 nn.Sequential(
-                    nn.Linear(hidden_dims[i], hidden_dims[i + 1]),
+                    nn.Linear(in_features=in_dim, out_features=h_dim),
                     nn.LeakyReLU(0.2),
                 )
             )
+            in_dim = h_dim
 
         self.fc_decoder = nn.Sequential(*fc_decoder)
-        self.out = nn.Linear(hidden_dims[-1], c)
+        self.out = nn.Sequential(
+            nn.Linear(hidden_dims[-1], c),
+            nn.Sigmoid(),
+        )
 
     def forward(self, x_coord: Tensor, z: Tensor):
         """
         Forward pass
         """
         batch_dim = x_coord.size()[0]
-        h = self.coord_latent(x_coord, z)  ## []
+        h = self.coord_latent(x_coord, z)
         if self.skip:
             residual = h
             for i, fc_block in enumerate(self.fc_decoder):
@@ -264,7 +270,7 @@ class rVAE(BaseVAE):
         self.z_dim = latent_dim + coord + nb_classes
 
         self.encoder = rEncoder(
-            in_dim=self.in_dim,
+            in_feature=self.in_dim,
             hidden_dims=self.hidden_dims,
             latent_dim=self.z_dim,
             **self.kdict,
@@ -273,7 +279,7 @@ class rVAE(BaseVAE):
         hidden_dims.reverse()
         self.decoder = rDecoder(
             out_dim=in_dim,
-            latent_dim=self.content_latent_dim,  ## Zx + Z_theta+ Z_dx + Z_dy
+            latent_dim=self.content_latent_dim,  ## Zx
             hidden_dims=hidden_dims,
         )
 
@@ -339,6 +345,7 @@ class rVAE(BaseVAE):
             phi_prior=self.phi_prior,
             phi_logsd=0.5 * phi_log_var,
         ).mean()
+
         kld_z = torch.mean(
             -0.5 * torch.sum(1 + z_log_var - z_mu**2 - z_log_var.exp(), dim=1), dim=0
         )
