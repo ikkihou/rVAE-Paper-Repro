@@ -15,9 +15,9 @@ from models.rvae import rVAE
 
 def test_rVAE():
     model = rVAE(
-        in_dim=(28, 28),
+        in_dim=(24, 24),
         latent_dim=2,
         hidden_dims=[512, 256],
         softplus_out=1,
-    )
-    out = model(torch.rand(100, 1, 28, 28))
+    ).to("mps")
+    out = model(torch.rand(100, 1, 24, 24).to("mps"))

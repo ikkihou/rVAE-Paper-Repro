@@ -17,6 +17,30 @@ import matplotlib.pyplot as plt
 from scipy import spatial, ndimage, optimize
 from sklearn import cluster
 import torch
+import platform
+
+
+def get_device():
+    if platform.system() == "Darwin":
+        # macOS 操作系统
+        if torch.backends.mps.is_available():
+            device = torch.device("mps")
+            print("Using MPS device on macOS.")
+        else:
+            device = torch.device("cpu")
+            print("MPS device not available on macOS. Falling back to CPU.")
+    else:
+        # 其他操作系统
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print("Using CUDA device.")
+        else:
+            device = torch.device("cpu")
+            print("CUDA device not available. Falling back to CPU.")
+    return device
+
+
+DEVICE = get_device()
 
 
 def grid2xy(X1: torch.Tensor, X2: torch.Tensor) -> torch.Tensor:

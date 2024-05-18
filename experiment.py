@@ -9,7 +9,28 @@ import pytorch_lightning as pl
 from torchvision import transforms
 import torchvision.utils as vutils
 
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+import platform
+def get_device():
+    if platform.system() == "Darwin":
+        # macOS 操作系统
+        if torch.backends.mps.is_available():
+            device = torch.device("mps")
+            print("Using MPS device on macOS.")
+        else:
+            device = torch.device("cpu")
+            print("MPS device not available on macOS. Falling back to CPU.")
+    else:
+        # 其他操作系统
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print("Using CUDA device.")
+        else:
+            device = torch.device("cpu")
+            print("CUDA device not available. Falling back to CPU.")
+    return device
+
+
+DEVICE = get_device()
 
 
 class VAEXperiment(pl.LightningModule):

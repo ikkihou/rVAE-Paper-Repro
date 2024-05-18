@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 /tb_logs
 /MNIST
+/Copy of pyroVAE_MNIST

@@ -31,7 +31,7 @@ def get_device():
         # macOS 操作系统
         if torch.backends.mps.is_available():
             device = torch.device("mps")
-            print("Using MPS device on macOS.")
+            logging.debug("Using MPS device on macOS.")
         else:
             device = torch.device("cpu")
             print("MPS device not available on macOS. Falling back to CPU.")
@@ -118,7 +118,7 @@ class rDecoder(nn.Module):
 
         if len(out_dim) == 2:
             c = 1
-            self.reshape_ = (out_dim[0], out_dim[1])
+            self.reshape_ = (1, out_dim[0], out_dim[1])
 
         self.skip = skip
 
@@ -192,6 +192,7 @@ class coord_latent(nn.Module):
         """
         batch_dim, n = x_coord.size()[:2]
         x_coord = x_coord.reshape(batch_dim * n, -1)  ## [B*H*W, 2]
+        logging.debug(f"x_coord shape: {x_coord.shape}")
         h_x = self.fc_coord(x_coord)
         h_x = h_x.reshape(batch_dim, n, -1)
         h_z = self.fc_latent(z)
@@ -251,7 +252,7 @@ class rVAE(BaseVAE):
         self.phi_prior = kwargs.get("rotation_prior", 0.1)
         self.kdict = deepcopy(kwargs)
         # self.kdict_["num_iter"] = 0
-        self.x_coord = imcoordgrid(in_dim).to(DEVICE)
+        self.x_coord = imcoordgrid(in_dim)
 
         if hidden_dims == None:
             hidden_dims = [1024, 512, 256]
@@ -298,7 +299,7 @@ class rVAE(BaseVAE):
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
 
-        x_coord_ = self.x_coord.expand(input.size(0), *self.x_coord.size())
+        x_coord_ = self.x_coord.expand(input.size(0), *self.x_coord.size()).to(DEVICE)
         logging.debug(f"x_coord_ shape: {x_coord_.shape}")
 
         mu, log_var = self.encode(input)
@@ -308,7 +309,7 @@ class rVAE(BaseVAE):
         phi = z[:, 0]
         if self.translation:
             dx = z[:, 1:3]
-            dx = (dx * self.dx_prior).unsqueeze(1)
+            dx = (dx * torch.tensor(self.dx_prior).to(DEVICE)).unsqueeze(1)
             z = z[:, 3:]
         else:
             dx = 0
@@ -316,6 +317,7 @@ class rVAE(BaseVAE):
 
         x_coord_ = transform_coordinates(x_coord_, phi, dx)
         logging.debug(f"transformed x_coord_ shape: {x_coord_.shape}")
+        logging.debug(f"latent image content z shape: {z.shape}")
 
         return [self.decode(x_coord_, z), input, mu, log_var]
 
@@ -357,14 +359,18 @@ class rVAE(BaseVAE):
         :param current_device: (Int) Device to run the model
         :return: (Tensor)
         """
-        z = torch.randn(num_samples, self.latent_dim)
+        z = torch.randn(num_samples, self.content_latent_dim)
+        logging.debug(f"sample z shape: {z.shape}")
 
         z = z.to(current_device)
 
-        samples = self.decode(z)
-        return samples.reshape(
-            num_samples, 1, int(math.sqrt(self.in_dim)), int(math.sqrt(self.in_dim))
-        )
+        x_coord_ = self.x_coord.expand(num_samples, *self.x_coord.size()).to(DEVICE)
+
+        samples = self.decode(x_coord_, z)
+        # return samples.reshape(
+        #     num_samples, 1, int(math.sqrt(self.in_dim)), int(math.sqrt(self.in_dim))
+        # )
+        return samples
 
     def generate(self, x: Tensor, **kwargs) -> Tensor:  ## x 是验证集中的一个batch
         """
@@ -372,10 +378,10 @@ class rVAE(BaseVAE):
         :param x: (Tensor) [B x (C x H x W)]
         :return: (Tensor) [B x (C x H x W)]
         """
-        # print(x.shape[1])
-        B, V = x.shape
-        H, W = int(math.sqrt(V)), int(math.sqrt(V))
+        # print(x.shape)
+        # B, C, H, W = x.shape
+        # H, W = int(math.sqrt(V)), int(math.sqrt(V))
 
         recons = self.forward(x)[0]
-        recons = torch.reshape(recons, shape=(B, 1, H, W))
+        # recons = torch.reshape(recons, shape=(B, 1, H, W))
         return recons

@@ -17,6 +17,30 @@ The code below are ported from https://github.com/pycroscopy/atomai
 from typing import Tuple, Optional, Union, List, Type
 import numpy as np
 import torch
+import platform
+
+
+def get_device():
+    if platform.system() == "Darwin":
+        # macOS 操作系统
+        if torch.backends.mps.is_available():
+            device = torch.device("mps")
+            print("Using MPS device on macOS.")
+        else:
+            device = torch.device("cpu")
+            print("MPS device not available on macOS. Falling back to CPU.")
+    else:
+        # 其他操作系统
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print("Using CUDA device.")
+        else:
+            device = torch.device("cpu")
+            print("CUDA device not available. Falling back to CPU.")
+    return device
+
+
+DEVICE = get_device()
 
 
 def to_onehot(idx: torch.Tensor, n: int) -> torch.Tensor:
@@ -30,7 +54,7 @@ def to_onehot(idx: torch.Tensor, n: int) -> torch.Tensor:
         )
     if idx.dim() == 1:
         idx = idx.unsqueeze(1)
-    device_ = "cuda" if torch.cuda.is_available() else "cpu"
+    device_ = DEVICE
     onehot = torch.zeros(idx.size(0), n, device=device_)
     onehot.scatter_(1, idx, 1)
     return onehot
