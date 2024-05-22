@@ -102,7 +102,7 @@ class rEncoder(nn.Module):
         x = x.reshape(x.size(0), -1)
         logging.debug(f"encoder input tensor shape: {x.shape}")
         result = self.encoder(x)
-        mu, log_std = self.fc_mu(result), self._out(self.fc_var(result))
+        mu, log_std = self.fc_mu(result), self._out(self.fc_logstd(result))
         return [mu, log_std]
 
 
@@ -139,7 +139,8 @@ class rDecoder(nn.Module):
             fc_decoder.append(
                 nn.Sequential(
                     nn.Linear(in_features=in_dim, out_features=h_dim),
-                    nn.LeakyReLU(0.2),
+                    # nn.LeakyReLU(0.2),
+                    nn.Tanh(),
                 )
             )
             in_dim = h_dim
@@ -147,7 +148,7 @@ class rDecoder(nn.Module):
         self.fc_decoder = nn.Sequential(*fc_decoder)
         self.out = nn.Sequential(
             nn.Linear(hidden_dims[-1], c),
-            nn.Sigmoid(),
+            # nn.Sigmoid(),
         )
 
     def forward(self, x_coord: Tensor, z: Tensor):
@@ -261,8 +262,8 @@ class rVAE(BaseVAE):
         coord = 3 if translation else 1  # xy translation and/or rotation
         self.translation = translation
         self.content_latent_dim = latent_dim
-        self.dx_prior = kwargs.get("translation_prior", 0.01)
-        self.phi_prior = kwargs.get("rotation_prior", 0.01)
+        self.dx_prior = kwargs.get("translation_prior", 0.1)
+        self.phi_prior = kwargs.get("rotation_prior", 0.1)
         self.kdict = deepcopy(kwargs)
         self.in_dim = in_dim
         # self.kdict_["num_iter"] = 0
@@ -436,13 +437,16 @@ class rVAE(BaseVAE):
                 z_sample = np.array([xi, yi]).reshape(1, 2)
                 # print(f"z_sample shape: {z_sample.shape}")
                 x_coord = self.x_coord.expand(z_sample.shape[0], *self.x_coord.size())
-                imdec = self.decode(
-                    x_coord, torch.from_numpy(z_sample.astype(np.float32))
-                )
+                with torch.no_grad():
+                    imdec = self.decode(
+                        x_coord, torch.from_numpy(z_sample.astype(np.float32))
+                    )
                 figure[
                     i * in_dim[0] : (i + 1) * in_dim[0],
                     j * in_dim[1] : (j + 1) * in_dim[1],
-                ] = imdec.detach().numpy()[0, 0]
+                ] = (
+                    imdec.detach().cpu().numpy()[0, 0]
+                )
         if figure.min() < 0:
             figure = (figure - figure.min()) / figure.ptp()
 
