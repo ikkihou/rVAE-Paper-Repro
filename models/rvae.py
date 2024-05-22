@@ -148,7 +148,7 @@ class rDecoder(nn.Module):
         self.fc_decoder = nn.Sequential(*fc_decoder)
         self.out = nn.Sequential(
             nn.Linear(hidden_dims[-1], c),
-            # nn.Sigmoid(),
+            nn.Sigmoid(),
         )
 
     def forward(self, x_coord: Tensor, z: Tensor):
@@ -358,8 +358,7 @@ class rVAE(BaseVAE):
         ).mean()
 
         kld_z = torch.mean(
-            -0.5
-            * torch.sum(1 + 2 * z_log_std - z_mu**2 - (2 * z_log_std).exp(), dim=1),
+            -0.5 * torch.sum(1 + 2 * z_log_std - z_mu**2 - z_log_std.exp() ** 2, dim=1),
             dim=0,
         )
 
@@ -396,7 +395,7 @@ class rVAE(BaseVAE):
         # z = torch.randn(num_samples, self.content_latent_dim)
         # logging.debug(f"sample z shape: {z.shape}")
 
-        z = torch.from_numpy(z_sample.astype(np.float32)).to(current_device)
+        z = torch.tensor(z_sample.astype(np.float32)).to(current_device)
 
         x_coord_ = self.x_coord.expand(num_samples, *self.x_coord.size()).to(DEVICE)
 
@@ -434,13 +433,14 @@ class rVAE(BaseVAE):
 
         for i, xi in enumerate(grid_x):
             for j, yi in enumerate(grid_y):
-                z_sample = np.array([xi, yi]).reshape(1, 2)
+                z_sample = np.array([xi, yi])
                 # print(f"z_sample shape: {z_sample.shape}")
-                x_coord = self.x_coord.expand(z_sample.shape[0], *self.x_coord.size())
-                with torch.no_grad():
-                    imdec = self.decode(
-                        x_coord, torch.from_numpy(z_sample.astype(np.float32))
-                    )
+                x_coord = self.x_coord.expand(1, *self.x_coord.size())
+                # with torch.no_grad():
+                imdec = self.decode(
+                    x_coord,
+                    torch.tensor(z_sample.astype(np.float32)).unsqueeze(0),
+                )
                 figure[
                     i * in_dim[0] : (i + 1) * in_dim[0],
                     j * in_dim[1] : (j + 1) * in_dim[1],
