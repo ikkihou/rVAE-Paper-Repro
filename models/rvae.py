@@ -14,9 +14,12 @@ import logging
 
 from copy import deepcopy
 
+import os
 import math
 import numpy as np
 from scipy.stats import norm
+import matplotlib.pyplot as plt
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -260,6 +263,7 @@ class rVAE(BaseVAE):
         self.dx_prior = kwargs.get("translation_prior", 0.1)
         self.phi_prior = kwargs.get("rotation_prior", 0.1)
         self.kdict = deepcopy(kwargs)
+        self.in_dim = in_dim
         # self.kdict_["num_iter"] = 0
         self.x_coord = imcoordgrid(in_dim)
 
@@ -267,13 +271,15 @@ class rVAE(BaseVAE):
             hidden_dims = [1024, 512, 256]
 
         self.hidden_dims = deepcopy(hidden_dims)
-        self.in_dim = in_dim if isinstance(in_dim, int) else int(in_dim[0] * in_dim[1])
-        logging.debug(f"Encoder input : {self.in_dim}")
+        self.in_img_dim = (
+            in_dim if isinstance(in_dim, int) else int(in_dim[0] * in_dim[1])
+        )
+        logging.debug(f"Encoder input : {self.in_img_dim}")
 
         self.z_dim = latent_dim + coord + nb_classes
 
         self.encoder = rEncoder(
-            in_feature=self.in_dim,
+            in_feature=self.in_img_dim,
             hidden_dims=self.hidden_dims,
             latent_dim=self.z_dim,
             **self.kdict,
@@ -409,3 +415,65 @@ class rVAE(BaseVAE):
         recons = self.forward(x)[0]
         # recons = torch.reshape(recons, shape=(B, 1, H, W))
         return recons
+
+    def manifold2d(self, **kwargs: Union[int, List, str, bool]) -> None:
+        d = kwargs.get("d", 9)
+        cmap = kwargs.get("cmap", "gnuplot")
+        in_dim = self.in_dim
+        if len(in_dim) == 2:
+            figure = np.zeros((in_dim[0] * d, in_dim[1] * d))
+        elif len(in_dim) == 3:
+            figure = np.zeros((self.in_dim[0] * d, self.in_dim[1] * d, self.in_dim[-1]))
+
+        grid_x = norm.ppf(np.linspace(0.95, 0.05, d))
+        grid_y = norm.ppf(np.linspace(0.05, 0.95, d))
+
+        for i, xi in enumerate(grid_x):
+            for j, yi in enumerate(grid_y):
+                z_sample = np.array([xi, yi]).reshape(1, 2)
+                # print(f"z_sample shape: {z_sample.shape}")
+                x_coord = self.x_coord.expand(z_sample.shape[0], *self.x_coord.size())
+                imdec = self.decode(
+                    x_coord, torch.from_numpy(z_sample.astype(np.float32))
+                )
+                figure[
+                    i * in_dim[0] : (i + 1) * in_dim[0],
+                    j * in_dim[1] : (j + 1) * in_dim[1],
+                ] = imdec.detach().numpy()[0, 0]
+        if figure.min() < 0:
+            figure = (figure - figure.min()) / figure.ptp()
+
+        ## plot
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.imshow(
+            figure,
+            cmap=cmap,
+            origin=kwargs.get("origin", "lower"),
+            extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()],
+        )
+        ax.set_xlabel("$z_1$")
+        ax.set_ylabel("$z_2$")
+
+        draw_grid = kwargs.get("draw_grid")
+        if draw_grid:
+            major_ticks_x = np.arange(0, d * in_dim[0], in_dim[0])
+            major_ticks_y = np.arange(0, d * in_dim[1], in_dim[1])
+            ax.set_xticks(major_ticks_x)
+            ax.set_yticks(major_ticks_y)
+            ax.grid(which="major", alpha=0.6)
+        for item in (
+            [ax.xaxis.label, ax.yaxis.label]
+            + ax.get_xticklabels()
+            + ax.get_yticklabels()
+        ):
+            item.set_fontsize(18)
+        if not kwargs.get("savefig"):
+            plt.show()
+        else:
+            savedir = kwargs.get("savedir", "./vae_learning/")
+            fname = kwargs.get("filename", "manifold_2d")
+            if not os.path.exists(savedir):
+                os.makedirs(savedir)
+            fig.savefig(os.path.join(savedir, "{}.png".format(fname)))
+            plt.close(fig)
+        return figure

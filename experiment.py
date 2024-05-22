@@ -7,6 +7,9 @@ from models.types_ import *
 # from utils import data_loader
 import pytorch_lightning as pl
 import torchvision.utils as vutils
+import numpy as np
+from scipy.stats import norm
+import matplotlib.pyplot as plt
 
 import platform
 
@@ -88,6 +91,9 @@ class VAEXperiment(pl.LightningModule):
 
     def on_validation_end(self) -> None:
         self.sample_images()
+
+    def manifold2d(self, **kwargs: Union[int, List, str, bool]) -> None:
+        self.model.manifold2d(**kwargs)
 
     def sample_images(self):
         # Get sample reconstruction image

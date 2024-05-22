@@ -17,6 +17,9 @@ from torch import nn
 from torch.nn import functional as F
 from .types_ import *
 
+import numpy as np
+from scipy.stats import norm
+
 
 class fcVAE(BaseVAE):
     """Fully connected VAE that takes vectorized small-size image as input"""
@@ -138,11 +141,14 @@ class fcVAE(BaseVAE):
 
         kld_weight = kwargs["M_N"]  # Account for the minibatch samples from the dataset
         # recons_loss = F.mse_loss(recons, input)
-        recons_loss = 0.5 * torch.sum(
-            (recons.reshape(recons.size(0), -1) - input.reshape(recons.size(0), -1))
-            ** 2,
-            1,
-        ).mean()
+        recons_loss = (
+            0.5
+            * torch.sum(
+                (recons.reshape(recons.size(0), -1) - input.reshape(recons.size(0), -1))
+                ** 2,
+                1,
+            ).mean()
+        )
 
         kld_loss = torch.mean(
             -0.5 * torch.sum(1 + log_var - mu**2 - log_var.exp(), dim=1), dim=0
@@ -164,11 +170,23 @@ class fcVAE(BaseVAE):
         :param current_device: (Int) Device to run the model
         :return: (Tensor)
         """
-        z = torch.randn(num_samples, self.latent_dim)
+        # z = torch.randn(num_samples, self.latent_dim)
 
-        z = z.to(current_device)
+        n_rows, n_cols = int(math.sqrt(num_samples)), int(math.sqrt(num_samples))
 
-        samples = self.decode(z)
+        grid_x = norm.ppf(np.linspace(0.95, 0.05, n_rows))
+        grid_y = norm.ppf(np.linspace(0.05, 0.95, n_cols))
+
+        z_sample = np.empty((num_samples, 2))
+        index = 0
+        for xi in grid_x:
+            for yi in grid_y:
+                z_sample[index] = np.array([xi, yi])
+                index += 1
+
+        z_sample = torch.from_numpy(z_sample.astype(np.float32)).to(current_device)
+
+        samples = self.decode(z_sample)
         return samples.reshape(
             num_samples, 1, int(math.sqrt(self.in_dim)), int(math.sqrt(self.in_dim))
         )
