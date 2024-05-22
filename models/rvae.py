@@ -79,6 +79,7 @@ class rEncoder(nn.Module):
     ) -> None:
         super(rEncoder, self).__init__()
 
+        activation = kwargs.get("activation", "relu")
         ## encoder
         modules = []
         in_dim = in_feature
@@ -86,7 +87,7 @@ class rEncoder(nn.Module):
             modules.append(
                 nn.Sequential(
                     nn.Linear(in_features=in_dim, out_features=h_dim),
-                    nn.LeakyReLU(0.2),
+                    nn.LeakyReLU(0.2) if activation == "relu" else nn.Tanh(),
                 )
             )
             in_dim = h_dim
@@ -94,15 +95,15 @@ class rEncoder(nn.Module):
         self.encoder = nn.Sequential(*modules)
 
         self.fc_mu = nn.Linear(hidden_dims[-1], latent_dim)
-        self.fc_var = nn.Linear(hidden_dims[-1], latent_dim)
+        self.fc_logstd = nn.Linear(hidden_dims[-1], latent_dim)
         self._out = nn.Softplus() if kwargs.get("softplus_out") else lambda x: x
 
     def forward(self, x: Tensor):
         x = x.reshape(x.size(0), -1)
         logging.debug(f"encoder input tensor shape: {x.shape}")
         result = self.encoder(x)
-        mu, log_var = self.fc_mu(result), self._out(self.fc_var(result))
-        return [mu, log_var]
+        mu, log_std = self.fc_mu(result), self._out(self.fc_var(result))
+        return [mu, log_std]
 
 
 class rDecoder(nn.Module):
@@ -260,8 +261,8 @@ class rVAE(BaseVAE):
         coord = 3 if translation else 1  # xy translation and/or rotation
         self.translation = translation
         self.content_latent_dim = latent_dim
-        self.dx_prior = kwargs.get("translation_prior", 0.1)
-        self.phi_prior = kwargs.get("rotation_prior", 0.1)
+        self.dx_prior = kwargs.get("translation_prior", 0.01)
+        self.phi_prior = kwargs.get("rotation_prior", 0.01)
         self.kdict = deepcopy(kwargs)
         self.in_dim = in_dim
         # self.kdict_["num_iter"] = 0
@@ -294,13 +295,13 @@ class rVAE(BaseVAE):
 
     def encode(self, input: torch.tensor) -> List[torch.tensor]:
         result = self.encoder(input)
-        return result  ## [mu, log_var]
+        return result  ## [mu, log_std]
 
     def decode(self, x_coord: torch.tensor, z: Tensor) -> Any:
         result = self.decoder(x_coord, z)
         return result
 
-    def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
+    def reparameterize(self, mu: Tensor, logstd: Tensor) -> Tensor:
         """
         Reparameterization trick to sample from N(mu, var) from
         N(0,1).
@@ -308,7 +309,7 @@ class rVAE(BaseVAE):
         :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
         :return: (Tensor) [B x D]
         """
-        std = torch.exp(0.5 * logvar)
+        std = torch.exp(logstd)
         eps = torch.randn_like(std)
         return eps * std + mu
 
@@ -317,8 +318,8 @@ class rVAE(BaseVAE):
         x_coord_ = self.x_coord.expand(input.size(0), *self.x_coord.size()).to(DEVICE)
         logging.debug(f"x_coord_ shape: {x_coord_.shape}")
 
-        mu, log_var = self.encode(input)
-        z = self.reparameterize(mu, log_var)
+        mu, log_std = self.encode(input)
+        z = self.reparameterize(mu, log_std)
         logging.debug(f"latent_code shape: {z.shape}")
 
         phi = z[:, 0]
@@ -334,17 +335,17 @@ class rVAE(BaseVAE):
         logging.debug(f"transformed x_coord_ shape: {x_coord_.shape}")
         logging.debug(f"latent image content z shape: {z.shape}")
 
-        return [self.decode(x_coord_, z), input, mu, log_var]
+        return [self.decode(x_coord_, z), input, mu, log_std]
 
     def loss_function(self, *inputs: torch.Any, **kwargs) -> torch.tensor:
         """Computes the rVAE loss function"""
         reconstr = inputs[0]
         input = inputs[1]
         mu = inputs[2]
-        log_var = inputs[3]
+        log_std = inputs[3]
 
-        phi_log_var = log_var[:, 0]
-        z_mu, z_log_var = mu[:, 1:], log_var[:, 1:]
+        phi_log_std = log_std[:, 0]
+        z_mu, z_log_std = mu[:, 1:], log_std[:, 1:]
 
         ## reconstruction loss
         reconstr_loss = F.mse_loss(reconstr, input)
@@ -352,11 +353,13 @@ class rVAE(BaseVAE):
         ## klds
         kld_rot = KLd_rot(
             phi_prior=self.phi_prior,
-            phi_logsd=0.5 * phi_log_var,
+            phi_logsd=phi_log_std,
         ).mean()
 
         kld_z = torch.mean(
-            -0.5 * torch.sum(1 + z_log_var - z_mu**2 - z_log_var.exp(), dim=1), dim=0
+            -0.5
+            * torch.sum(1 + 2 * z_log_std - z_mu**2 - (2 * z_log_std).exp(), dim=1),
+            dim=0,
         )
 
         loss = kld_rot + kld_z + reconstr_loss
